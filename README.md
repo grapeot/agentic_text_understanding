@@ -109,5 +109,5 @@
 
 这样会得到：
 - `results/weighted_messages.csv`：在原始顺序的基础上为每条消息附加平均后的 `information_weight`。
-- `results/sender_weight_summary.csv`：按照发送者统计总消息数、平均权重等指标。
-- `results/information_weight_dashboard.html`：Plotly 生成的交互式可视化，展示平均权重最高/最低的成员。
+- `results/sender_weight_summary.csv`：按照发送者统计消息总数、权重总和、平均/中位/最大/最小/标准差等指标。
+- `results/information_weight_dashboard.html`：Plotly 生成的 2×2 仪表盘，展示平均权重（含标准差误差棒）与权重总和的 Top/Bottom 发送者排名。

@@ -99,8 +99,8 @@ python src/offline/analyze_weights.py \
   --min-messages 5
 ```
 
-- `sender_weight_summary.csv`：包含每位发送者的消息数、平均/中位/最大/最小权重。
-- `information_weight_dashboard.html`：采用 Plotly White 主题，居中标题，左右两栏分别展示平均权重最高和最低的成员，并在条形图上标注消息数量。
+- `sender_weight_summary.csv`：包含每位发送者的消息数、权重总和、平均/中位/最大/最小、标准差等统计指标。
+- `information_weight_dashboard.html`：使用 2×2 子图分别展示“平均权重 Top/Bottom 发送者”（带标准差误差棒）与“权重总和 Top/Bottom 发送者”。所有条形图均按要求排序，并标注消息数。
 
 根据需要，你可以添加更多可选参数，例如按权重阈值过滤消息再写出单独的 CSV，或导出 Top N 高信息密度消息列表。
 

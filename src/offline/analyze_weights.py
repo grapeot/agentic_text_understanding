@@ -55,14 +55,21 @@ def build_sender_summary(rows: List[dict[str, str]]) -> List[dict[str, object]]:
     summary: List[dict[str, object]] = []
     for sender, data in stats.items():
         weights = data["weights"]
+        if len(weights) >= 2:
+            std_weight = statistics.pstdev(weights)
+        else:
+            std_weight = 0.0
+
         summary.append(
             {
                 "sender": sender,
                 "message_count": data["count"],
+                "weight_sum": data["weight_sum"],
                 "average_weight": data["weight_sum"] / data["count"],
                 "median_weight": statistics.median(weights),
                 "max_weight": max(weights),
                 "min_weight": min(weights),
+                "stddev_weight": std_weight,
             }
         )
 
@@ -74,10 +81,12 @@ def write_summary_csv(summary: List[dict[str, object]], path: Path) -> None:
     fieldnames = [
         "sender",
         "message_count",
+        "weight_sum",
         "average_weight",
         "median_weight",
         "max_weight",
         "min_weight",
+        "stddev_weight",
     ]
     with path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
@@ -98,55 +107,74 @@ def render_dashboard(
     if not filtered:
         raise SystemExit("No senders meet the minimum message threshold for visualization.")
 
-    sorted_summary = sorted(filtered, key=lambda x: x["average_weight"], reverse=True)
-    top = sorted_summary[:top_k]
-    bottom = list(reversed(sorted_summary[-top_k:])) if len(sorted_summary) >= top_k else list(reversed(sorted_summary))
+    def split_top_bottom(metric: str) -> tuple[List[dict[str, object]], List[dict[str, object]]]:
+        sorted_desc = sorted(filtered, key=lambda x: x[metric], reverse=True)
+        sorted_asc = list(reversed(sorted_desc))
+        top = sorted_desc[:top_k]
+        bottom = sorted_asc[:top_k]
+        return top, bottom
+
+    avg_top, avg_bottom = split_top_bottom("average_weight")
+    sum_top, sum_bottom = split_top_bottom("weight_sum")
 
     fig = make_subplots(
-        rows=1,
+        rows=2,
         cols=2,
-        subplot_titles=(f"Top {len(top)} Senders", f"Bottom {len(bottom)} Senders"),
+        subplot_titles=(
+            f"平均权重 Top {len(avg_top)}",
+            f"平均权重 Bottom {len(avg_bottom)}",
+            f"权重总和 Top {len(sum_top)}",
+            f"权重总和 Bottom {len(sum_bottom)}",
+        ),
+        vertical_spacing=0.12,
+        horizontal_spacing=0.14,
     )
 
-    fig.add_trace(
-        go.Bar(
-            x=[row["average_weight"] for row in top],
-            y=[row["sender"] for row in top],
-            text=[f"{row['message_count']} msgs" for row in top],
+    def add_bar_trace(data: List[dict[str, object]], row: int, col: int, metric: str, color: str, show_error: bool = False) -> None:
+        x_values = [row_data[metric] for row_data in data]
+        y_values = [row_data["sender"] for row_data in data]
+        text_values = [f"{row_data['message_count']} msgs" for row_data in data]
+        trace_kwargs = dict(
+            x=x_values,
+            y=y_values,
+            text=text_values,
             orientation="h",
-            marker=dict(color="#2E86DE"),
-        ),
-        row=1,
-        col=1,
-    )
+            marker=dict(color=color),
+        )
+        if show_error:
+            trace_kwargs["error_x"] = dict(
+                type="data",
+                array=[row_data["stddev_weight"] for row_data in data],
+                visible=True,
+            )
+        fig.add_trace(go.Bar(**trace_kwargs), row=row, col=col)
 
-    fig.add_trace(
-        go.Bar(
-            x=[row["average_weight"] for row in bottom],
-            y=[row["sender"] for row in bottom],
-            text=[f"{row['message_count']} msgs" for row in bottom],
-            orientation="h",
-            marker=dict(color="#BFC9CA"),
-        ),
-        row=1,
-        col=2,
-    )
+    add_bar_trace(avg_top, 1, 1, "average_weight", "#2E86DE", show_error=True)
+    add_bar_trace(avg_bottom, 1, 2, "average_weight", "#BFC9CA", show_error=True)
+    add_bar_trace(sum_top, 2, 1, "weight_sum", "#27AE60")
+    add_bar_trace(sum_bottom, 2, 2, "weight_sum", "#E59866")
 
     fig.update_layout(
         template="plotly_white",
         title={
-            "text": "Information Density by Sender",
+            "text": "Information Density Breakdown",
             "x": 0.5,
             "font": {"size": 24, "family": "Helvetica, Arial, sans-serif"},
         },
         font=dict(family="Helvetica, Arial, sans-serif", size=14, color="#2C3E50"),
-        bargap=0.2,
-        height=600,
-        margin=dict(t=80, b=50, l=120, r=80),
+        bargap=0.18,
+        height=900,
+        margin=dict(t=90, b=60, l=140, r=100),
     )
 
-    fig.update_yaxes(showgrid=False)
-    fig.update_xaxes(range=[0, 1])
+    # Top列表：从大到小显示；Bottom列表：从小到大显示
+    fig.update_yaxes(autorange="reversed", showgrid=False, row=1, col=1)
+    fig.update_yaxes(showgrid=False, autorange="reversed", row=1, col=2)
+    fig.update_yaxes(autorange="reversed", showgrid=False, row=2, col=1)
+    fig.update_yaxes(showgrid=False, autorange="reversed", row=2, col=2)
+
+    fig.update_xaxes(range=[0, 1], row=1, col=1)
+    fig.update_xaxes(range=[0, 1], row=1, col=2)
 
     fig.write_html(
         str(html_path),
