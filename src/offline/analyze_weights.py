@@ -8,7 +8,7 @@ import csv
 import statistics
 from collections import Counter
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Tuple
 
 try:
     import plotly.graph_objects as go
@@ -246,11 +246,20 @@ def write_filtered_csv(
     fieldnames: List[str],
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
+    output_fields = [name for name in fieldnames if name != "information_weight"]
+    if not output_fields:
+        raise ValueError("No columns available after removing information_weight")
     with path.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer = csv.DictWriter(handle, fieldnames=output_fields)
         writer.writeheader()
         for row in rows:
-            writer.writerow(row)
+            writer.writerow({key: row.get(key, "") for key in output_fields})
+
+
+def count_csv_rows(path: Path) -> int:
+    with path.open(encoding="utf-8") as handle:
+        total_lines = sum(1 for _ in handle)
+    return max(0, total_lines - 1)
 
 
 def main() -> None:
@@ -297,6 +306,12 @@ def main() -> None:
         default=None,
         help="Path for filtered CSV (only used when --filter-threshold is provided)",
     )
+    parser.add_argument(
+        "--original-csv",
+        type=Path,
+        default=None,
+        help="Optional path to the raw chat CSV for comparison stats",
+    )
 
     args = parser.parse_args()
 
@@ -314,14 +329,14 @@ def main() -> None:
         )
         write_filtered_csv(filtered_rows, output_path, fieldnames)
 
-        original_lines = len(rows)
+        aggregated_lines = len(rows)
         filtered_lines = len(filtered_rows)
-        original_bytes = args.input.stat().st_size if args.input.exists() else 0
+        aggregated_bytes = args.input.stat().st_size if args.input.exists() else 0
         filtered_bytes = output_path.stat().st_size if output_path.exists() else 0
 
         reduction_pct = (
-            (1 - filtered_lines / original_lines) * 100
-            if original_lines
+            (1 - filtered_lines / aggregated_lines) * 100
+            if aggregated_lines
             else 0
         )
         print(
@@ -330,11 +345,26 @@ def main() -> None:
             f"(>{args.filter_threshold} retained)",
         )
         print(
-            f"Lines: {filtered_lines}/{original_lines} ({reduction_pct:.2f}% reduction)"
+            f"Lines: {filtered_lines}/{aggregated_lines} ({reduction_pct:.2f}% reduction vs aggregated)"
         )
         print(
-            f"File size: {filtered_bytes} bytes (original {original_bytes} bytes)"
+            f"File size: {filtered_bytes} bytes (aggregated {aggregated_bytes} bytes)"
         )
+
+        if args.original_csv and args.original_csv.exists():
+            raw_rows = count_csv_rows(args.original_csv)
+            raw_bytes = args.original_csv.stat().st_size
+            raw_reduction_pct = (
+                (1 - filtered_lines / raw_rows) * 100
+                if raw_rows
+                else 0
+            )
+            print(
+                f"Lines vs raw ({args.original_csv}): {filtered_lines}/{raw_rows} ({raw_reduction_pct:.2f}% reduction)"
+            )
+            print(
+                f"File size vs raw: {filtered_bytes} bytes (raw {raw_bytes} bytes)"
+            )
 
 
 if __name__ == "__main__":

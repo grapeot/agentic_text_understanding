@@ -110,10 +110,11 @@ python src/offline/analyze_weights.py \
   --summary-output results/sender_weight_summary.csv \
   --html-output results/information_weight_dashboard.html \
   --filter-threshold 0.25 \
-  --filtered-output results/weighted_messages_filtered.csv
+  --filtered-output results/weighted_messages_filtered.csv \
+  --original-csv AI生产力训练营__text_only.csv
 ```
 
-脚本会在控制台输出过滤前后的行数和文件大小（默认文件路径同上），便于评估压缩效果。
+脚本会在控制台输出与聚合文件以及原始聊天 CSV 的行数、文件大小对比（`--original-csv` 可选，省略则仅比较聚合文件），便于评估压缩效果。若未指定 `--filtered-output`，默认写入 `results/weighted_messages_filtered.csv`。
 
 ## 5. 常见问题与排查
 

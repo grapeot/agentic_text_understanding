@@ -120,7 +120,8 @@ python src/offline/analyze_weights.py \
   --summary-output results/sender_weight_summary.csv \
   --html-output results/information_weight_dashboard.html \
   --filter-threshold 0.25 \
-  --filtered-output results/weighted_messages_filtered.csv
+  --filtered-output results/weighted_messages_filtered.csv \
+  --original-csv AI生产力训练营__text_only.csv
 ```
 
-执行后会额外生成 `results/weighted_messages_filtered.csv`，并在终端打印过滤前后行数与文件大小，帮助你评估去水效果。
+执行后会额外生成 `results/weighted_messages_filtered.csv`，并在终端打印与聚合文件及原始聊天 CSV 的行数、文件大小对比（`--original-csv` 可省略）。
