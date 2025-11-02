@@ -6,3 +6,4 @@ python-dotenv==1.2.1
 google-genai==1.47.0
 numpy==2.3.4
 tqdm==4.67.1
+plotly==6.3.1

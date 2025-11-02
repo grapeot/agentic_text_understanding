@@ -45,7 +45,7 @@
 2. 执行构建脚本：
    ```bash
    source venv/bin/activate
-   python scripts/build_index.py \
+   python src/offline/build_index.py \
      --input-path AI生产力训练营__text_only.csv \
      --output-dir data \
      --chunk-size 50 \
@@ -64,7 +64,7 @@
 2. 启动服务（默认端口 8004）：
    ```bash
    source venv/bin/activate
-   uvicorn app.server:app --host 0.0.0.0 --port 8004
+   uvicorn src.webapp.server:app --host 0.0.0.0 --port 8004
    ```
 3. 可通过 `http://localhost:8004/docs` 查看 Swagger UI，快速试用接口：
    - `GET /lines/count`
@@ -78,6 +78,36 @@
 
 ## 日常流程回顾
 
-1. 新的聊天记录到达后，放置到根目录并运行 `scripts/build_index.py` 更新索引。
+1. 新的聊天记录到达后，放置到根目录并运行 `python src/offline/build_index.py` 更新索引。
 2. 启动 FastAPI 服务，为前端或智能体提供查询与语义检索能力。
 3. 智能体依照 `instructions.md` 的流程，交替调用 `POST /think/deep` 与检索接口，逐步沉淀分析成果。
+
+## 信息密度标注与分析流程
+
+为了解聊天记录中真正高信息密度的片段，我们额外构建了一个三阶段流水线：分块 → 智能体标注 → 汇总分析。
+
+1. **分块原始 CSV**（默认 1000 行、重叠 20 行）
+   ```bash
+   source venv/bin/activate
+   python src/offline/chunk_csv.py AI生产力训练营__text_only.csv data/chunks_1000_20 --chunk-size 1000 --overlap 20
+   ```
+2. **调用 Codex 给每个 chunk 打分**
+   - 首次跑完整目录：`JOBS=16 src/offline/run_codex_weights.sh data/chunks_1000_20`
+   - 若中途有失败，可用 `python src/offline/find_unweighted_chunks.py data/chunks_1000_20 --manifest results/unweighted_chunks.txt` 生成清单，再执行 `src/offline/run_codex_weights.sh --manifest results/unweighted_chunks.txt` 补齐。
+   - 提示词位于 `prompts/information_weight_prompt.txt`，会要求 Codex 三遍检查确保只是增加 `information_weight` 列。
+3. **汇总并分析**
+   ```bash
+   source venv/bin/activate
+   python src/offline/aggregate_chunks.py --output results/weighted_messages.csv
+   uv pip install plotly  # 首次可视化时执行一次
+   python src/offline/analyze_weights.py \
+     --input results/weighted_messages.csv \
+     --summary-output results/sender_weight_summary.csv \
+     --html-output results/information_weight_dashboard.html \
+     --top-k 20 --min-messages 5
+   ```
+
+这样会得到：
+- `results/weighted_messages.csv`：在原始顺序的基础上为每条消息附加平均后的 `information_weight`。
+- `results/sender_weight_summary.csv`：按照发送者统计总消息数、平均权重等指标。
+- `results/information_weight_dashboard.html`：Plotly 生成的交互式可视化，展示平均权重最高/最低的成员。

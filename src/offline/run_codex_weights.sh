@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 PROMPT_TEMPLATE="${PROMPT_TEMPLATE:-$ROOT_DIR/prompts/information_weight_prompt.txt}"
 JOBS="${JOBS:-16}"
 MANIFEST=""

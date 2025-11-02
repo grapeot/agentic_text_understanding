@@ -27,7 +27,7 @@ EMBEDDING_MODEL = "text-embedding-3-small"
 GEMINI_MODEL = "gemini-2.5-pro"
 
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("app.server")
+logger = logging.getLogger("src.webapp.server")
 _token_lock = threading.Lock()
 
 
@@ -180,7 +180,7 @@ def startup_event() -> None:
     state.lines = read_lines(DEFAULT_INPUT_PATH)
 
     if not CHUNKS_PATH.exists() or not INDEX_PATH.exists():
-        raise RuntimeError("索引或分块文件不存在，请先运行 scripts/build_index.py 生成索引。")
+        raise RuntimeError("索引或分块文件不存在，请先运行 python src/offline/build_index.py 生成索引。")
     state.chunk_records = load_chunks(CHUNKS_PATH)
     if not state.chunk_records:
         raise RuntimeError("分块文件为空，无法加载索引。")
@@ -424,4 +424,4 @@ def deep_think(
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run("app.server:app", host="0.0.0.0", port=8004, reload=False)
+    uvicorn.run("src.webapp.server:app", host="0.0.0.0", port=8004, reload=False)

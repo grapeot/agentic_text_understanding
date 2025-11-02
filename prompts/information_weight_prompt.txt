@@ -4,7 +4,7 @@ Target CSV file: $TARGET_FILE
 
 Workflow (run each step explicitly):
 1. Read the entire file once to understand its structure and themes. Do not make edits yet.
-2. Revisit every row and assign an `information_weight` value. Insert the new column after the existing ones while keeping the original order and formatting. Add at most two decimal places. Use consistent judgment, reading each row carefully instead of relying on regular expressions or bulk search-and-replace.
+2. Revisit the rows in manageable batches (no more than ~300 records per editing pass). After each batch, insert an `information_weight` column entry, save the changes, then continue with the next batch until every row is scored. Add at most two decimal places. Use consistent judgment, reading each row carefully instead of relying on regular expressions or bulk search-and-replace.
 3. Reread the final CSV to ensure it is valid (same number of commas per row as the header, weights present on every row, UTF-8 text intact). Abort if you notice corruption.
 
 Scoring guidance (examples, not exhaustive):
@@ -20,3 +20,4 @@ Rules:
 - Avoid creating helper files or using code to post-process the CSV; apply edits directly within the file.
 - Keep all text in UTF-8. Escape quotes exactly as needed for CSV.
 - Respond with a short status summary after finishing or skipping the file.
+- If you notice partial progress from an earlier run (some weights populated, others blank), continue the batching process only on the blank rows until the file is complete.
