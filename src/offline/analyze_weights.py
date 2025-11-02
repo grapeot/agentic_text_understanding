@@ -107,8 +107,7 @@ def compute_distribution(rows: List[dict[str, str]]) -> List[Tuple[float, int]]:
             weight = float(weight_text)
         except ValueError:
             continue
-        bucket = round(weight * 4) / 4
-        bucket_counts[bucket] += 1
+        bucket_counts[weight] += 1
     return sorted(bucket_counts.items(), key=lambda x: x[0])
 
 
@@ -165,6 +164,7 @@ def render_dashboard(
             text=text_values,
             orientation="h",
             marker=dict(color=color),
+            width=1.5,
         )
         if show_error:
             trace_kwargs["error_x"] = dict(
@@ -187,7 +187,7 @@ def render_dashboard(
             "font": {"size": 24, "family": "Helvetica, Arial, sans-serif"},
         },
         font=dict(family="Helvetica, Arial, sans-serif", size=14, color="#2C3E50"),
-        bargap=0.18,
+        bargap=0.06,
         height=1100,
         margin=dict(t=90, b=70, l=160, r=110),
     )
@@ -204,7 +204,7 @@ def render_dashboard(
     if distribution:
         fig.add_trace(
             go.Bar(
-                x=[f"{bucket:.2f}" for bucket, _ in distribution],
+                x=[f"{bucket:.4f}".rstrip("0").rstrip(".") for bucket, _ in distribution],
                 y=[count for _, count in distribution],
                 marker=dict(color="#8E44AD"),
             ),

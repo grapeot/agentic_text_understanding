@@ -100,7 +100,7 @@ python src/offline/analyze_weights.py \
 ```
 
 - `sender_weight_summary.csv`：包含每位发送者的消息数、权重总和、平均/中位/最大/最小、标准差等统计指标。
-- `information_weight_dashboard.html`：使用 2×2 子图分别展示“平均权重 Top/Bottom 发送者”（带标准差误差棒）与“权重总和 Top/Bottom 发送者”，第三行额外给出按四分位舍入的权重分布柱状图。所有条形图均按要求排序，并标注消息数。
+- `information_weight_dashboard.html`：使用前两行 2×2 子图分别展示“平均权重 Top/Bottom 发送者”（带标准差误差棒）与“权重总和 Top/Bottom 发送者”，第三行额外给出按原始权重值聚合的分布柱状图。所有条形图均按要求排序，并标注消息数。
 
 若希望直接得到高信息密度版本的聊天记录，可以添加阈值过滤参数：
 
