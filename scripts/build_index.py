@@ -116,7 +116,7 @@ def save_chunks(chunks: Sequence[dict], embeddings: Iterable[Sequence[float]], o
         for chunk, embedding in zip(chunks, embeddings):
             record = {
                 **chunk,
-                "embedding": list(embedding),
+                "embedding": [float(value) for value in embedding],
             }
             outfile.write(json.dumps(record, ensure_ascii=False) + "\n")
 
@@ -142,6 +142,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--overlap", type=int, default=OVERLAP_DEFAULT, help="Number of overlapping lines between chunks.")
     parser.add_argument("--workers", type=int, default=WORKERS_DEFAULT, help="Number of processes for embedding generation.")
     parser.add_argument("--model", type=str, default=MODEL_DEFAULT, help="OpenAI embedding model to use.")
+    parser.add_argument("--limit", type=int, default=None, help="Limit the number of chunks to embed (for testing).")
     return parser.parse_args()
 
 
@@ -156,6 +157,9 @@ def main() -> None:
     chunks = generate_chunks(lines, args.chunk_size, args.overlap)
     if not chunks:
         raise RuntimeError("No chunks were generated. Check the input file and chunk configuration.")
+
+    if args.limit is not None:
+        chunks = chunks[: args.limit]
 
     embeddings_list = embed_chunks(chunks, args.model, args.workers)
     embeddings_array = np.asarray(embeddings_list, dtype="float32")
