@@ -63,21 +63,27 @@ process_file() {
 export ROOT_DIR PROMPT_TEMPLATE
 export -f process_file
 
-mapfile -t FILES < <(
-  if [[ -n "$MANIFEST" ]]; then
-    if [[ ! -f "$MANIFEST" ]]; then
-      echo "[run_codex_weights] manifest not found: $MANIFEST" >&2
-      exit 1
-    fi
-    sed '/^$/d' "$MANIFEST"
-  else
-    if [[ ! -d "$TARGET_DIR" ]]; then
-      echo "[run_codex_weights] target directory not found: $TARGET_DIR" >&2
-      exit 1
-    fi
-    find "$TARGET_DIR" -type f -name '*.csv' | sort
+FILES=()
+
+if [[ -n "$MANIFEST" ]]; then
+  if [[ ! -f "$MANIFEST" ]]; then
+    echo "[run_codex_weights] manifest not found: $MANIFEST" >&2
+    exit 1
   fi
-)
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    [[ -z "$line" ]] && continue
+    FILES+=("$line")
+  done <"$MANIFEST"
+else
+  if [[ ! -d "$TARGET_DIR" ]]; then
+    echo "[run_codex_weights] target directory not found: $TARGET_DIR" >&2
+    exit 1
+  fi
+  while IFS= read -r path; do
+    [[ -z "$path" ]] && continue
+    FILES+=("$path")
+  done < <(find "$TARGET_DIR" -type f -name '*.csv' | sort)
+fi
 
 if [[ ${#FILES[@]} -eq 0 ]]; then
   echo "[run_codex_weights] no files to process" >&2
