@@ -111,3 +111,16 @@
 - `results/weighted_messages.csv`：在原始顺序的基础上为每条消息附加平均后的 `information_weight`。
 - `results/sender_weight_summary.csv`：按照发送者统计消息总数、权重总和、平均/中位/最大/最小/标准差等指标。
 - `results/information_weight_dashboard.html`：Plotly 生成的 2×2 仪表盘，展示平均权重（含标准差误差棒）与权重总和的 Top/Bottom 发送者排名。
+
+可选：
+
+```bash
+python src/offline/analyze_weights.py \
+  --input results/weighted_messages.csv \
+  --summary-output results/sender_weight_summary.csv \
+  --html-output results/information_weight_dashboard.html \
+  --filter-threshold 0.25 \
+  --filtered-output results/weighted_messages_filtered.csv
+```
+
+执行后会额外生成 `results/weighted_messages_filtered.csv`，并在终端打印过滤前后行数与文件大小，帮助你评估去水效果。

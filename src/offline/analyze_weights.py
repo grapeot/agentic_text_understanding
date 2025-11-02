@@ -6,8 +6,9 @@ from __future__ import annotations
 import argparse
 import csv
 import statistics
+from collections import Counter
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Optional, Tuple
 
 try:
     import plotly.graph_objects as go
@@ -18,13 +19,14 @@ except ImportError as exc:  # pragma: no cover - handled at runtime
     ) from exc
 
 
-def read_weighted_messages(path: Path) -> List[dict[str, str]]:
+def read_weighted_messages(path: Path) -> Tuple[List[dict[str, str]], List[str]]:
     with path.open(newline="", encoding="utf-8") as handle:
         reader = csv.DictReader(handle)
         rows = [row for row in reader]
-    if "information_weight" not in reader.fieldnames:
+        fieldnames = reader.fieldnames or []
+    if "information_weight" not in fieldnames:
         raise ValueError("information_weight column missing in aggregated CSV")
-    return rows
+    return rows, fieldnames
 
 
 def build_sender_summary(rows: List[dict[str, str]]) -> List[dict[str, object]]:
@@ -95,8 +97,24 @@ def write_summary_csv(summary: List[dict[str, object]], path: Path) -> None:
             writer.writerow(row)
 
 
+def compute_distribution(rows: List[dict[str, str]]) -> List[Tuple[float, int]]:
+    bucket_counts: Counter[float] = Counter()
+    for row in rows:
+        weight_text = (row.get("information_weight") or "").strip()
+        if not weight_text:
+            continue
+        try:
+            weight = float(weight_text)
+        except ValueError:
+            continue
+        bucket = round(weight * 4) / 4
+        bucket_counts[bucket] += 1
+    return sorted(bucket_counts.items(), key=lambda x: x[0])
+
+
 def render_dashboard(
     summary: List[dict[str, object]],
+    rows: List[dict[str, str]],
     html_path: Path,
     top_k: int,
     min_messages: int,
@@ -116,17 +134,24 @@ def render_dashboard(
 
     avg_top, avg_bottom = split_top_bottom("average_weight")
     sum_top, sum_bottom = split_top_bottom("weight_sum")
+    distribution = compute_distribution(rows)
 
     fig = make_subplots(
-        rows=2,
+        rows=3,
         cols=2,
+        specs=[
+            [{}, {}],
+            [{}, {}],
+            [{"colspan": 2}, None],
+        ],
         subplot_titles=(
             f"平均权重 Top {len(avg_top)}",
             f"平均权重 Bottom {len(avg_bottom)}",
             f"权重总和 Top {len(sum_top)}",
             f"权重总和 Bottom {len(sum_bottom)}",
+            "权重分布 (四分位)",
         ),
-        vertical_spacing=0.12,
+        vertical_spacing=0.13,
         horizontal_spacing=0.14,
     )
 
@@ -163,8 +188,8 @@ def render_dashboard(
         },
         font=dict(family="Helvetica, Arial, sans-serif", size=14, color="#2C3E50"),
         bargap=0.18,
-        height=900,
-        margin=dict(t=90, b=60, l=140, r=100),
+        height=1100,
+        margin=dict(t=90, b=70, l=160, r=110),
     )
 
     # Top列表：从大到小显示；Bottom列表：从小到大显示
@@ -176,12 +201,56 @@ def render_dashboard(
     fig.update_xaxes(range=[0, 1], row=1, col=1)
     fig.update_xaxes(range=[0, 1], row=1, col=2)
 
+    if distribution:
+        fig.add_trace(
+            go.Bar(
+                x=[f"{bucket:.2f}" for bucket, _ in distribution],
+                y=[count for _, count in distribution],
+                marker=dict(color="#8E44AD"),
+            ),
+            row=3,
+            col=1,
+        )
+        fig.update_yaxes(title_text="消息条数", row=3, col=1)
+        fig.update_xaxes(title_text="information_weight (四分位舍入)", row=3, col=1)
+
     fig.write_html(
         str(html_path),
         full_html=True,
         include_plotlyjs="cdn",
         include_mathjax=False,
     )
+
+
+def filter_messages(
+    rows: List[dict[str, str]],
+    threshold: float,
+) -> List[dict[str, str]]:
+    filtered = []
+    for row in rows:
+        weight_text = (row.get("information_weight") or "").strip()
+        if not weight_text:
+            continue
+        try:
+            weight = float(weight_text)
+        except ValueError:
+            continue
+        if weight > threshold:
+            filtered.append(row)
+    return filtered
+
+
+def write_filtered_csv(
+    rows: List[dict[str, str]],
+    path: Path,
+    fieldnames: List[str],
+) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(row)
 
 
 def main() -> None:
@@ -216,13 +285,56 @@ def main() -> None:
         default=5,
         help="Minimum messages per sender to appear in the visualization",
     )
+    parser.add_argument(
+        "--filter-threshold",
+        type=float,
+        default=None,
+        help="If set, drop messages with weight <= threshold and write to --filtered-output",
+    )
+    parser.add_argument(
+        "--filtered-output",
+        type=Path,
+        default=None,
+        help="Path for filtered CSV (only used when --filter-threshold is provided)",
+    )
 
     args = parser.parse_args()
 
-    rows = read_weighted_messages(args.input)
+    rows, fieldnames = read_weighted_messages(args.input)
     summary = build_sender_summary(rows)
     write_summary_csv(summary, args.summary_output)
-    render_dashboard(summary, args.html_output, args.top_k, args.min_messages)
+    render_dashboard(summary, rows, args.html_output, args.top_k, args.min_messages)
+
+    if args.filter_threshold is not None:
+        filtered_rows = filter_messages(rows, args.filter_threshold)
+        output_path = (
+            args.filtered_output
+            if args.filtered_output is not None
+            else Path("results/weighted_messages_filtered.csv")
+        )
+        write_filtered_csv(filtered_rows, output_path, fieldnames)
+
+        original_lines = len(rows)
+        filtered_lines = len(filtered_rows)
+        original_bytes = args.input.stat().st_size if args.input.exists() else 0
+        filtered_bytes = output_path.stat().st_size if output_path.exists() else 0
+
+        reduction_pct = (
+            (1 - filtered_lines / original_lines) * 100
+            if original_lines
+            else 0
+        )
+        print(
+            "Filtered messages saved to",
+            output_path,
+            f"(>{args.filter_threshold} retained)",
+        )
+        print(
+            f"Lines: {filtered_lines}/{original_lines} ({reduction_pct:.2f}% reduction)"
+        )
+        print(
+            f"File size: {filtered_bytes} bytes (original {original_bytes} bytes)"
+        )
 
 
 if __name__ == "__main__":
