@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
+import threading
 from pathlib import Path
-from typing import List
+from typing import Any, Dict, List, Tuple
 
 import faiss
 import numpy as np
@@ -19,9 +21,14 @@ DATA_DIR = Path("data")
 DEFAULT_INPUT_PATH = Path("AI生产力训练营__text_only.csv")
 CHUNKS_PATH = DATA_DIR / "chunks.jsonl"
 INDEX_PATH = DATA_DIR / "index.faiss"
+TOKEN_USAGE_PATH = DATA_DIR / "token_usage.json"
 MAX_LINE_SPAN = 2000
 EMBEDDING_MODEL = "text-embedding-3-small"
 GEMINI_MODEL = "gemini-2.5-pro"
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("app.server")
+_token_lock = threading.Lock()
 
 
 class LineCountResponse(BaseModel):
@@ -107,6 +114,54 @@ def load_chunks(path: Path) -> List[dict]:
                 continue
             records.append(json.loads(line))
     return records
+
+
+def _truncate(text: str, limit: int = 200) -> str:
+    softened = text.replace("\n", " ")
+    return softened[:limit] + ("..." if len(softened) > limit else "")
+
+
+def _extract_numeric_entries(payload: Dict[str, Any]) -> Dict[str, float]:
+    numeric: Dict[str, float] = {}
+    for key, value in payload.items():
+        if isinstance(value, (int, float)):
+            numeric[key] = float(value)
+    return numeric
+
+
+def _update_token_usage(provider: str, usage: Dict[str, Any]) -> None:
+    numeric_usage = _extract_numeric_entries(usage)
+    if not numeric_usage:
+        return
+
+    with _token_lock:
+        TOKEN_USAGE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        existing: Dict[str, Dict[str, float]] = {}
+        if TOKEN_USAGE_PATH.exists():
+            try:
+                with TOKEN_USAGE_PATH.open("r", encoding="utf-8") as infile:
+                    loaded = json.load(infile)
+                    if isinstance(loaded, dict):
+                        existing = {
+                            str(k): {
+                                str(inner_k): float(inner_v)
+                                for inner_k, inner_v in inner_dict.items()
+                                if isinstance(inner_v, (int, float))
+                            }
+                            for k, inner_dict in loaded.items()
+                            if isinstance(inner_dict, dict)
+                        }
+            except json.JSONDecodeError:
+                existing = {}
+
+        totals = existing.setdefault(provider, {})
+        for key, value in numeric_usage.items():
+            totals[key] = totals.get(key, 0.0) + float(value)
+
+        with TOKEN_USAGE_PATH.open("w", encoding="utf-8") as outfile:
+            json.dump(existing, outfile, ensure_ascii=False, indent=2)
+
+    logger.info("Token usage updated (%s): %s", provider, numeric_usage)
 
 
 def get_state() -> AppState:
@@ -220,12 +275,17 @@ def _semantic_search_single(
     query: str,
     k: int,
     state: AppState,
-) -> List[SemanticHit]:
+) -> Tuple[List[SemanticHit], Dict[str, Any]]:
     client = get_openai_client(state)
     response = client.embeddings.create(
         model=state.embedding_model,
         input=query,
     )
+    usage_details: Dict[str, Any] = {}
+    if getattr(response, "usage", None):
+        usage_details = response.usage.model_dump()
+        _update_token_usage("openai_embeddings", usage_details)
+
     embedding = np.asarray(response.data[0].embedding, dtype="float32")
     embedding = embedding.reshape(1, -1)
 
@@ -245,7 +305,7 @@ def _semantic_search_single(
                 text=record["text"],
             )
         )
-    return hits
+    return hits, usage_details
 
 
 @app.post(
@@ -264,10 +324,31 @@ def semantic_search(
             detail="k 必须为正整数。",
         )
 
-    results = [
-        _semantic_search_single(query, payload.k, state) for query in payload.queries
-    ]
-    return SemanticQueryResponse(results=results)
+    aggregated_results: List[List[SemanticHit]] = []
+
+    logger.info("Semantic search requested: queries=%s, k=%d", payload.queries, payload.k)
+
+    for query_index, query in enumerate(payload.queries):
+        hits, usage_details = _semantic_search_single(query, payload.k, state)
+        aggregated_results.append(hits)
+        logger.info(
+            "Semantic search query[%d]=\"%s\" usage=%s",
+            query_index,
+            query,
+            _extract_numeric_entries(usage_details),
+        )
+        for hit_index, hit in enumerate(hits):
+            logger.info(
+                "Semantic search result query[%d] hit[%d]: chunk=%d lines=%d-%d distance=%.4f snippet=\"%s\"",
+                query_index,
+                hit_index,
+                hit.chunk_id,
+                hit.start_line,
+                hit.end_line,
+                hit.distance,
+                _truncate(hit.text),
+            )
+    return SemanticQueryResponse(results=aggregated_results)
 
 
 @app.post(
@@ -279,6 +360,7 @@ def deep_think(
     payload: DeepThinkRequest,
     state: AppState = Depends(get_state),
 ) -> DeepThinkResponse:
+    logger.info("Deep think prompt: \"%s\"", _truncate(payload.prompt))
     client = get_genai_client(state)
     contents = [
         genai_types.Content(
@@ -323,6 +405,19 @@ def deep_think(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Gemini 没有返回可用内容。",
         )
+    usage_metadata = getattr(response, "usage_metadata", None)
+    usage_dict: Dict[str, Any] = {}
+    if usage_metadata:
+        try:
+            usage_dict = usage_metadata.model_dump()
+        except AttributeError:
+            usage_dict = {}
+        _update_token_usage("gemini_deep_think", usage_dict)
+        logger.info(
+            "Deep think usage: %s",
+            _extract_numeric_entries(usage_dict),
+        )
+    logger.info("Deep think output: \"%s\"", _truncate(output))
     return DeepThinkResponse(output=output)
 
 
