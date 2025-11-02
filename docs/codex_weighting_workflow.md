@@ -41,6 +41,17 @@ The template references `$TARGET_FILE`, which the runner script expands per chun
 - Feed the prompt template to each run via stdin while setting `TARGET_FILE` to the chunk path relative to repo root.
 - Skip files that already contain `information_weight` (Codex enforces this in the prompt).
 
+### Selecting specific files
+- `scripts/find_unweighted_chunks.py` scans a directory and lists any CSVs missing `information_weight` values. Generate a manifest (newline-separated paths) and reuse it with the runner to avoid re-processing completed chunks.
+
+```bash
+source venv/bin/activate
+python scripts/find_unweighted_chunks.py data/chunks_1000_20 --manifest results/unweighted_chunks.txt
+JOBS=16 scripts/run_codex_weights.sh --manifest results/unweighted_chunks.txt
+```
+
+The runner checks each manifest path (absolute or relative) before launching Codex.
+
 ## Sample Data for Dry Runs
 `data/samples/sample_100_rows.csv` contains the first 100 rows of the original chat log for quick tests. Use it to validate prompts and output parsing before launching the full batch.
 
